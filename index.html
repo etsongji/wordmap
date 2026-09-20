@@ -188,7 +188,7 @@
     <h2>🗺️ 단어 지도</h2>
     <p>학번 4자리와 이름을 입력하세요. 지도는 서버에 자동 저장되어 어느 기기에서든 이어서 만들 수 있어요.<br><span style="font-size:12px">처음 입력한 이름이 학번에 등록돼요. 이름을 잘못 넣었다면 선생님께 말씀하세요.</span></p>
     <div class="field"><label class="fld">학번 (4자리 숫자)</label><input type="text" id="gNum" inputmode="numeric" placeholder="예: 2103" autocomplete="off"></div>
-    <div class="field"><label class="fld">이름</label><input type="text" id="gName" placeholder="예: 홍길동" autocomplete="off"></div>
+    <div class="field"><label class="fld" id="gNameLabel">이름</label><input type="text" id="gName" placeholder="예: 홍길동" autocomplete="off"></div>
     <div class="err" id="gErr"></div>
     <button class="act" id="gBtn">시작하기</button>
   </div>
@@ -725,6 +725,18 @@ document.getElementById('gBtn').onclick=async()=>{
   err.textContent=''; await startStudent(num,name);
 };
 document.getElementById('gName').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('gBtn').click(); });
+// 학번 칸에 교사 코드를 넣으면 이름 칸을 비밀번호 칸으로 바꾼다 (전자칠판 등 공개 화면 노출 방지)
+function syncGateMode(){
+  const teacher=document.getElementById('gNum').value.trim().toLowerCase()===TEACHER_CODE;
+  const nameEl=document.getElementById('gName'), label=document.getElementById('gNameLabel');
+  if((nameEl.type==='password')===teacher) return;
+  nameEl.type=teacher?'password':'text';
+  nameEl.placeholder=teacher?'교사 비밀번호':'예: 홍길동';
+  nameEl.autocomplete=teacher?'new-password':'off';
+  label.textContent=teacher?'교사 비밀번호':'이름';
+  nameEl.value='';
+}
+document.getElementById('gNum').addEventListener('input',syncGateMode);
 document.getElementById('btnLogout').onclick=()=>location.reload();
 
 /* =========================================================
