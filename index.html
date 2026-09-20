@@ -168,12 +168,17 @@
   .pwords span{display:inline-block;margin:3px 6px 3px 0;padding:2px 8px;border-radius:7px;background:#f1f3f6;}
   .pwords span.core{background:var(--brand-soft);color:var(--brand);font-weight:600;}
   .cloud-wrap{flex:1;position:relative;min-height:0;background:radial-gradient(circle at 50% 40%, #ffffff 0%, #f1f3f6 100%);}
-  #cloud{width:100%;height:100%;display:block;cursor:default;}
+  #cloud{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:default;}
   .cloud-info{position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:12px;color:var(--muted);max-width:min(420px,90%);}
   .cloud-info b{color:var(--ink);}
   .cloud-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted);}
   .cloud-ctl label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
   .tsmall{font-size:12px;color:var(--muted);}
+  /* 워드클라우드 전체화면: 브라우저 API 또는 CSS 대체(.fs) */
+  #t-cloud:fullscreen,#t-cloud:-webkit-full-screen{background:var(--bg);}
+  #t-cloud.fs{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;}
+  #t-cloud.fs .cloud-wrap,#t-cloud:fullscreen .cloud-wrap{min-height:0;}
+  .fsbtn{flex:none;padding:8px 12px;margin-left:auto;}
   @media (max-width:760px){
     .split{flex-direction:column;}
     .roster{width:auto;max-height:200px;border-right:none;border-bottom:1px solid var(--line);}
@@ -305,6 +310,7 @@
           <label><input type="checkbox" id="ckMin"> 2명 이상만</label>
           <span class="tsmall" id="cloudStat"></span>
         </div>
+        <button class="csvbtn fsbtn" id="btnCloudFs" title="전체화면 (Esc로 종료)">⛶ 전체화면</button>
       </div>
       <div class="cloud-wrap"><canvas id="cloud"></canvas><div class="cloud-info" id="cloudInfo">단어를 누르면 누가 넣었는지 보여요. 글자 크기 = 넣은 학생 수.</div></div>
     </div>
@@ -888,6 +894,35 @@ cv.addEventListener('click',e=>{ const r=cv.getBoundingClientRect(); const x=e.c
   if(!hit){ info.innerHTML='단어를 누르면 누가 넣었는지 보여요. 글자 크기 = 넣은 학생 수.'; return; }
   const w=hit.wd; info.innerHTML=`<b>${esc(w.word)}</b> — ${w.n}명 ${w.means.size?'· 뜻: '+esc([...w.means].join(' / ')):''}<br><span class="tsmall">${esc(w.who.join(', '))}</span>`; });
 ['ckCore','ckMin'].forEach(id=>document.getElementById(id).onchange=drawCloud);
+
+/* ---------- 워드클라우드 전체화면 ---------- */
+const cloudView=document.getElementById('t-cloud'), btnCloudFs=document.getElementById('btnCloudFs');
+const fsEl=()=>document.fullscreenElement||document.webkitFullscreenElement||null;
+const isCloudFs=()=>fsEl()===cloudView||cloudView.classList.contains('fs');
+function updateFsBtn(){ btnCloudFs.textContent=isCloudFs()?'✕ 전체화면 종료':'⛶ 전체화면'; }
+function afterFsChange(){ updateFsBtn(); setTimeout(drawCloud,60); }
+let fsBusy=false;
+async function toggleCloudFs(){
+  if(fsBusy) return; fsBusy=true;
+  try{ await toggleCloudFs_(); } finally{ fsBusy=false; }
+}
+async function toggleCloudFs_(){
+  if(isCloudFs()){
+    cloudView.classList.remove('fs');
+    try{ if(fsEl()) await (document.exitFullscreen||document.webkitExitFullscreen).call(document); }catch(e){}
+  }else{
+    let ok=false; const req=cloudView.requestFullscreen||cloudView.webkitRequestFullscreen;
+    if(req){ // 요청이 거부되거나 800ms 안에 응답이 없으면 CSS 방식으로 대체
+      try{ ok=await Promise.race([Promise.resolve(req.call(cloudView)).then(()=>true,()=>false), new Promise(r=>setTimeout(()=>r(false),800))]); }
+      catch(e){ ok=false; }
+      ok=ok&&!!fsEl(); }
+    if(!ok) cloudView.classList.add('fs'); // API 미지원(iOS 등) → CSS로 화면 전체 덮기
+  }
+  afterFsChange();
+}
+btnCloudFs.onclick=toggleCloudFs;
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,afterFsChange));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&cloudView.classList.contains('fs')){ cloudView.classList.remove('fs'); afterFsChange(); } });
 window.addEventListener('resize',()=>{ if(document.body.classList.contains('teacher')) drawCloud(); });
 
 /* 시작: 로그인 대기 */
