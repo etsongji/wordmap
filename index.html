@@ -701,6 +701,11 @@ searchClearBtn.addEventListener('click',()=>{ searchInput.value=''; doSearch(); 
    로그인
 ========================================================= */
 const gate=document.getElementById('gate');
+// 새로고침해도 로그인 유지 (탭 세션 저장소: 탭을 닫거나 '나가기'를 누르면 사라짐)
+const SESSION_KEY='wm_session';
+function saveSession(obj){ try{ sessionStorage.setItem(SESSION_KEY, JSON.stringify(obj)); }catch(e){} }
+function loadSession(){ try{ const r=sessionStorage.getItem(SESSION_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+function clearSession(){ try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){} }
 async function startStudent(num,name){
   const gErr=document.getElementById('gErr');
   const local=localLoad(num); let words=null, saveState=null;
@@ -720,6 +725,7 @@ async function startStudent(num,name){
   document.getElementById('who').textContent=`${num} ${name}`; document.getElementById('btnLogout').hidden=false;
   setSave(saveState[0],saveState[1]);
   DATA=(words||[]).map(norm); gate.style.display='none'; gErr.textContent=''; rebuild();
+  saveSession({type:'student',num,name});
   if(API_URL&&local&&words===local.words) persist();
   return true;
 }
@@ -743,7 +749,7 @@ function syncGateMode(){
   nameEl.value='';
 }
 document.getElementById('gNum').addEventListener('input',syncGateMode);
-document.getElementById('btnLogout').onclick=()=>location.reload();
+document.getElementById('btnLogout').onclick=()=>{ clearSession(); location.reload(); };
 
 /* =========================================================
    교사 모드
@@ -786,6 +792,7 @@ async function startTeacher(pin){
   document.getElementById('who').textContent='교사 모드'; document.getElementById('btnLogout').hidden=false;
   document.getElementById('subTitle').textContent='학생 포트폴리오 · 반 전체 워드클라우드';
   gate.style.display='none';
+  saveSession({type:'teacher',pin:TEACHER_PIN_INPUT});
   await loadAll();
   return true;
 }
@@ -925,8 +932,13 @@ btnCloudFs.onclick=toggleCloudFs;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&cloudView.classList.contains('fs')){ cloudView.classList.remove('fs'); afterFsChange(); } });
 window.addEventListener('resize',()=>{ if(document.body.classList.contains('teacher')) drawCloud(); });
 
-/* 시작: 로그인 대기 */
-document.getElementById('gNum').focus();
+/* 시작: 이전 세션이 있으면 자동 로그인, 없으면 로그인 대기 */
+(async()=>{
+  const ses=loadSession();
+  if(ses&&ses.type==='teacher'){ document.getElementById('gNum').value=TEACHER_CODE; syncGateMode(); const ok=await startTeacher(ses.pin||''); if(!ok) clearSession(); return; }
+  if(ses&&ses.type==='student'&&/^\d{4}$/.test(ses.num||'')&&ses.name){ document.getElementById('gNum').value=ses.num; document.getElementById('gName').value=ses.name; const ok=await startStudent(ses.num,ses.name); if(!ok) clearSession(); return; }
+  document.getElementById('gNum').focus();
+})();
 </script>
 </body>
 </html>
