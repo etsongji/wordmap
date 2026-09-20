@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>단어 지도 — Word Map (반 운영판)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1f2430; --muted:#6b7280;
+    --line:#e5e7eb; --brand:#3b6ea5; --brand-soft:#e9f1fa;
+    --syn:#1d9e75; --syn-soft:#e1f5ee; --ant:#d85a30; --ant-soft:#faece7;
+    --root:#7f5ad8; --root-soft:#efe9fb;
+    --danger:#d92d2d; --shadow:0 1px 3px rgba(20,30,50,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.5;
+    display:flex;flex-direction:column;min-height:100vh;
+  }
+  header{
+    background:var(--panel);border-bottom:1px solid var(--line);
+    padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.2px;}
+  header .sub{font-size:12px;color:var(--muted);}
+  .grow{flex:1;}
+  .pill{
+    font-size:12px;background:var(--brand-soft);color:var(--brand);
+    padding:4px 10px;border-radius:999px;font-weight:600;white-space:nowrap;
+  }
+  .pill.gray{background:#eef0f3;color:var(--muted);}
+  .pill.ok{background:var(--syn-soft);color:var(--syn);}
+  .pill.err{background:var(--ant-soft);color:var(--ant);}
+  .who{font-size:13px;font-weight:600;}
+  .lnk{border:none;background:none;color:var(--brand);font-size:12px;cursor:pointer;text-decoration:underline;padding:0;}
+  main{flex:1;display:flex;flex-direction:column;min-height:0;}
+
+  /* ---- 로그인 ---- */
+  .gate{position:fixed;inset:0;background:rgba(30,38,50,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .gate .box{background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .gate h2{margin:0 0 4px;font-size:18px;}
+  .gate p{margin:0 0 14px;font-size:13px;color:var(--muted);}
+  .gate .err{color:var(--danger);font-size:12.5px;min-height:18px;margin-top:6px;}
+
+  /* ---- 시각화 ---- */
+  .stage-wrap{position:relative;flex:1;min-height:340px;background:
+    radial-gradient(circle at 50% 40%, #ffffff 0%, #f1f3f6 100%);
+    overflow:hidden;touch-action:none;}
+  svg{width:100%;height:100%;display:block;}
+  .edge{stroke-width:2;fill:none;}
+  .edge.syn{stroke:var(--syn);}
+  .edge.ant{stroke:var(--ant);stroke-dasharray:6 5;}
+  .edge.root{stroke:var(--root);stroke-width:1.5;stroke-dasharray:2 4;}
+  .node-circle{cursor:grab;stroke:#fff;stroke-width:2.5;transition:r .12s;}
+  .node-circle:active{cursor:grabbing;}
+  .node-label{font-size:13px;font-weight:700;fill:var(--ink);pointer-events:none;}
+  .node-mean{font-size:10.5px;fill:var(--muted);pointer-events:none;}
+  .node-g.dim{opacity:.18;}
+  .node-g.focus .node-circle{stroke:var(--brand);stroke-width:3.5;}
+  .node-g.hit .node-circle{stroke:var(--brand);stroke-width:4;}
+  .node-g.hit .node-label{fill:var(--brand);}
+  .node-g.ghost .node-circle{stroke-dasharray:5 4;stroke:#fff;}
+  .node-g.ghost .node-label{font-style:italic;}
+  .edge.ghost{stroke-dasharray:5 5;opacity:.8;}
+  .legend{
+    position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.92);
+    border:1px solid var(--line);border-radius:10px;padding:8px 11px;
+    font-size:11.5px;color:var(--muted);display:flex;gap:12px;backdrop-filter:blur(4px);
+  }
+  .legend b{font-weight:600;color:var(--ink);}
+  .lg{display:inline-flex;align-items:center;gap:5px;}
+  .lg i{width:18px;height:0;border-top:3px solid;border-radius:2px;display:inline-block;}
+  .searchbar{
+    position:absolute;top:12px;left:12px;right:12px;z-index:5;
+    display:flex;align-items:center;gap:8px;max-width:420px;margin:0 auto;
+    background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:11px;
+    padding:0 10px;box-shadow:var(--shadow);backdrop-filter:blur(4px);
+  }
+  .searchbar .si{font-size:14px;opacity:.6;flex:none;}
+  .searchbar input{flex:1;border:none;background:transparent;padding:11px 4px;font-size:14px;font-family:inherit;color:var(--ink);}
+  .searchbar input:focus{outline:none;}
+  @keyframes sbload{0%,100%{box-shadow:inset 0 -2px 0 transparent}50%{box-shadow:inset 0 -2px 0 var(--brand)}}
+  .searchbar input.loading{animation:sbload 1s ease-in-out infinite;}
+  .sclear{border:none;background:#eef0f3;color:var(--muted);width:24px;height:24px;flex:none;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;}
+  .preview-card{
+    position:absolute;left:12px;right:12px;bottom:54px;z-index:5;max-width:420px;margin:0 auto;
+    background:var(--brand-soft);border:1px solid #b8d2ea;border-radius:12px;
+    padding:11px 13px;display:flex;align-items:center;gap:11px;box-shadow:var(--shadow);
+  }
+  .preview-card .grow{min-width:0;}
+  .pc-w{font-weight:700;font-size:15px;}
+  .pc-tag{font-size:11px;color:var(--brand);margin-top:2px;font-weight:600;}
+  .pc-add{border:none;background:var(--brand);color:#fff;font-size:13px;font-weight:700;padding:10px 13px;border-radius:9px;cursor:pointer;white-space:nowrap;flex:none;}
+  .empty-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;padding:20px;pointer-events:none;}
+  .detail{
+    position:absolute;right:12px;top:64px;z-index:5;max-width:260px;background:rgba(255,255,255,.96);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:12.5px;box-shadow:var(--shadow);
+  }
+  .detail .w{font-size:16px;font-weight:700;}
+  .detail .m{color:var(--muted);}
+  .detail .parts{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;}
+  .detail .parts span{background:var(--root-soft);color:var(--root);padding:1px 7px;border-radius:6px;font-size:11.5px;font-weight:600;}
+  .detail .rel{margin-top:5px;}
+  .detail .rel b.s{color:var(--syn);} .detail .rel b.a{color:var(--ant);}
+
+  /* ---- 컨트롤 패널 ---- */
+  .panel{background:var(--panel);border-top:1px solid var(--line);padding:14px 16px calc(14px + env(safe-area-inset-bottom));}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .tab{flex:1;text-align:center;padding:9px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand);}
+  .view{display:none;} .view.on{display:block;}
+  label.fld{display:block;font-size:12px;color:var(--muted);font-weight:600;margin:0 0 4px;}
+  input[type=text],input[type=password],select{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+    font-size:15px;font-family:inherit;background:#fff;color:var(--ink);
+  }
+  input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);}
+  .row{display:flex;gap:8px;} .row>*{flex:1;min-width:0;}
+  .field{margin-bottom:10px;}
+  .hint{font-size:11px;color:var(--muted);margin-top:3px;}
+  button.act{width:100%;padding:12px;border:none;border-radius:11px;background:var(--brand);color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px;}
+  button.act:active{transform:scale(.99);}
+  button.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand);}
+  .list{max-height:240px;overflow:auto;-webkit-overflow-scrolling:touch;}
+  .item{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:none;}
+  .item .w{font-weight:700;font-size:14px;} .item .m{font-size:12px;color:var(--muted);}
+  .item .tags{font-size:11px;color:var(--muted);margin-top:2px;} .item .grow{min-width:0;}
+  .del{border:none;background:var(--ant-soft);color:var(--ant);font-size:12px;font-weight:700;padding:7px 11px;border-radius:9px;cursor:pointer;white-space:nowrap;}
+  .swatch{width:11px;height:11px;border-radius:50%;flex:none;}
+  .rec{border:1px solid var(--line);border-radius:11px;padding:11px 12px;margin-bottom:9px;display:flex;align-items:center;gap:11px;}
+  .rec .grow{min-width:0;} .rec .w{font-weight:700;font-size:15px;} .rec .why{font-size:11.5px;margin-top:3px;}
+  .rec .why .s{color:var(--syn);font-weight:600;} .rec .why .a{color:var(--ant);font-weight:600;}
+  .add{border:none;background:var(--syn-soft);color:var(--syn);font-size:13px;font-weight:700;padding:9px 13px;border-radius:9px;cursor:pointer;white-space:nowrap;}
+  .muted-box{color:var(--muted);font-size:13px;text-align:center;padding:18px 8px;}
+  .count-line{font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .toolbar{display:flex;gap:8px;margin-top:10px;}
+  .toolbar button{flex:1;padding:9px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;}
+  .csv-box{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);}
+  .csv-title{font-size:13px;font-weight:700;margin-bottom:6px;}
+  .csv-box code{background:#f1f3f6;padding:1px 5px;border-radius:5px;font-size:11px;}
+  .csv-actions{display:flex;gap:8px;}
+  .csvbtn{flex:1;padding:11px;border:1px solid var(--brand);background:#fff;color:var(--brand);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
+  .csv-msg{font-size:12.5px;margin-top:9px;min-height:1px;} .csv-msg.ok{color:var(--syn);} .csv-msg.err{color:var(--danger);white-space:pre-line;}
+  ::-webkit-scrollbar{width:7px;height:7px;} ::-webkit-scrollbar-thumb{background:#cdd3da;border-radius:6px;}
+
+  /* ---- 교사 화면 ---- */
+  #teacher{display:none;flex:1;flex-direction:column;min-height:0;}
+  body.teacher #teacher{display:flex;} body.teacher #student{display:none;}
+  .tbar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .tbar select{width:auto;padding:8px 10px;font-size:14px;}
+  .tbar .tab{flex:none;padding:8px 14px;}
+  .tbody{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .tview{display:none;flex:1;min-height:0;} .tview.on{display:flex;}
+  .split{display:flex;flex:1;min-height:0;}
+  .roster{width:300px;flex:none;border-right:1px solid var(--line);background:var(--panel);overflow:auto;}
+  .roster table{width:100%;border-collapse:collapse;font-size:13px;}
+  .roster th{position:sticky;top:0;background:#f3f5f8;text-align:left;padding:8px 10px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;}
+  .roster td{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .roster tr.on td{background:var(--brand-soft);}
+  .roster tr:hover td{background:#f7f9fc;}
+  .roster .num{color:var(--muted);font-size:12px;}
+  .pstage{flex:1;display:flex;flex-direction:column;min-height:0;}
+  .pinfo{padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .pwords{max-height:160px;overflow:auto;background:var(--panel);border-top:1px solid var(--line);padding:6px 14px;font-size:12.5px;}
+  .pwords span{display:inline-block;margin:3px 6px 3px 0;padding:2px 8px;border-radius:7px;background:#f1f3f6;}
+  .pwords span.core{background:var(--brand-soft);color:var(--brand);font-weight:600;}
+  .cloud-wrap{flex:1;position:relative;min-height:0;background:radial-gradient(circle at 50% 40%, #ffffff 0%, #f1f3f6 100%);}
+  #cloud{width:100%;height:100%;display:block;cursor:default;}
+  .cloud-info{position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:12px;color:var(--muted);max-width:min(420px,90%);}
+  .cloud-info b{color:var(--ink);}
+  .cloud-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted);}
+  .cloud-ctl label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+  .tsmall{font-size:12px;color:var(--muted);}
+  @media (max-width:760px){
+    .split{flex-direction:column;}
+    .roster{width:auto;max-height:200px;border-right:none;border-bottom:1px solid var(--line);}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== 로그인 게이트 ===== -->
+<div class="gate" id="gate">
+  <div class="box">
+    <h2>🗺️ 단어 지도</h2>
+    <p>학번 4자리와 이름을 입력하세요. 지도는 서버에 자동 저장되어 어느 기기에서든 이어서 만들 수 있어요.<br><span style="font-size:12px">처음 입력한 이름이 학번에 등록돼요. 이름을 잘못 넣었다면 선생님께 말씀하세요.</span></p>
+    <div class="field"><label class="fld">학번 (4자리 숫자)</label><input type="text" id="gNum" inputmode="numeric" placeholder="예: 2103" autocomplete="off"></div>
+    <div class="field"><label class="fld">이름</label><input type="text" id="gName" placeholder="예: 홍길동" autocomplete="off"></div>
+    <div class="err" id="gErr"></div>
+    <button class="act" id="gBtn">시작하기</button>
+  </div>
+</div>
+
+<header>
+  <div>
+    <h1>🗺️ 단어 지도</h1>
+    <div class="sub" id="subTitle">유의어·반의어·어근을 한눈에</div>
+  </div>
+  <div class="grow"></div>
+  <span class="who" id="who"></span>
+  <span class="pill gray" id="savePill" hidden>저장됨</span>
+  <span class="pill" id="statPill">단어 0개</span>
+  <button class="lnk" id="btnLogout" hidden>나가기</button>
+</header>
+
+<main>
+<!-- ===== 학생 화면 ===== -->
+<div id="student" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+  <div class="stage-wrap" id="stage">
+    <div class="searchbar">
+      <i class="si">🔍</i>
+      <input type="text" id="search" placeholder="단어 검색 — 관련 단어만 컬러로" autocomplete="off">
+      <button class="sclear" id="searchClear" aria-label="검색 지우기" hidden>✕</button>
+    </div>
+    <svg id="svg" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
+      <g id="edges"></g><g id="nodes"></g>
+    </svg>
+    <div class="legend">
+      <span class="lg"><i style="border-color:var(--syn)"></i><b>유의어</b></span>
+      <span class="lg"><i style="border-color:var(--ant);border-top-style:dashed"></i><b>반의어</b></span>
+      <span class="lg"><i style="border-color:var(--root);border-top-style:dotted"></i><b>같은 어근</b></span>
+    </div>
+    <div class="detail" id="detail" hidden></div>
+    <div class="preview-card" id="previewCard" hidden>
+      <div class="grow">
+        <div class="pc-w"><span id="pcWord"></span></div>
+        <div class="pc-tag" id="pcTag">사전 미리보기 · 내 단어장엔 없음</div>
+      </div>
+      <button class="pc-add" id="pcAdd">＋ 추가</button>
+    </div>
+    <div class="empty-hint" id="emptyHint" style="display:none;">아직 단어가 없어요.<br>아래 <b>+ 단어 추가</b>에서 첫 단어를 넣어 보세요.</div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="tabs">
+      <div class="tab on" data-v="add">＋ 단어 추가</div>
+      <div class="tab" data-v="list">내 단어</div>
+      <div class="tab" data-v="rec">추천</div>
+    </div>
+
+    <div class="view on" id="v-add">
+      <div class="row field">
+        <div><label class="fld">영어 단어</label><input type="text" id="inWord" placeholder="예: predict" autocomplete="off"></div>
+        <div><label class="fld">뜻 (한국어)</label><input type="text" id="inMean" placeholder="예: 예측하다" autocomplete="off"></div>
+      </div>
+      <div class="row field">
+        <div><label class="fld" style="color:var(--root)">접두사</label><input type="text" id="inPre" placeholder="pre-" autocomplete="off"></div>
+        <div><label class="fld" style="color:var(--root)">어근</label><input type="text" id="inRoot" placeholder="dict" autocomplete="off"></div>
+        <div><label class="fld" style="color:var(--root)">접미사</label><input type="text" id="inSuf" placeholder="-ion" autocomplete="off"></div>
+      </div>
+      <div class="field"><label class="fld" style="color:var(--syn)">유의어 (쉼표로 구분)</label><input type="text" id="inSyn" placeholder="forecast, foresee" autocomplete="off"></div>
+      <div class="field"><label class="fld" style="color:var(--ant)">반의어 (쉼표로 구분)</label><input type="text" id="inAnt" placeholder="recall" autocomplete="off"></div>
+      <p class="hint">접두사·어근·접미사는 선택. 같은 어근을 쓴 단어끼리는 점선으로 자동 연결돼요. 유의어·반의어에 적은 단어가 지도에 없으면 함께 추가돼요.</p>
+      <button class="act" id="btnAdd">지도에 추가하기</button>
+
+      <div class="csv-box">
+        <div class="csv-title">📄 CSV로 한꺼번에 넣기</div>
+        <p class="hint" style="margin:0 0 9px">열 순서: <b>단어, 뜻, 유의어, 반의어, 접두사, 어근, 접미사</b>. 한 칸에 여러 개는 세미콜론(;)으로 구분. (예: <code>glad; joyful</code>)</p>
+        <div class="csv-actions">
+          <button class="csvbtn" id="btnCsvPick">파일 선택</button>
+          <button class="csvbtn" id="btnCsvTemplate">양식 내려받기</button>
+        </div>
+        <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+        <div class="csv-msg" id="csvMsg"></div>
+      </div>
+    </div>
+
+    <div class="view" id="v-list">
+      <div class="count-line" id="listCount"></div>
+      <div class="list" id="wordList"></div>
+      <div class="toolbar">
+        <button id="btnSample">예시 단어 불러오기</button>
+        <button id="btnExport">JSON 내보내기</button>
+        <button id="btnClear">전체 지우기</button>
+      </div>
+    </div>
+
+    <div class="view" id="v-rec">
+      <p class="hint" style="margin-top:0">내 단어와 연결된, 아직 안 배운 단어예요. 눌러서 바로 추가하세요.</p>
+      <div id="recList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 교사 화면 ===== -->
+<div id="teacher">
+  <div class="tbar">
+    <div class="tab on" data-t="cloud">☁️ 워드클라우드</div>
+    <div class="tab" data-t="port">📚 학생 포트폴리오</div>
+    <div class="grow"></div>
+    <select id="classSel"><option value="">전체</option></select>
+    <button class="csvbtn" style="flex:none;padding:8px 12px" id="btnReload">↻ 새로고침</button>
+    <button class="csvbtn" style="flex:none;padding:8px 12px" id="btnCsvOut">CSV 내보내기</button>
+  </div>
+  <div class="tbody">
+    <div class="tview on" id="t-cloud" style="flex-direction:column">
+      <div class="tbar" style="padding:8px 16px">
+        <div class="cloud-ctl">
+          <label><input type="checkbox" id="ckCore" checked> 뜻을 적은 단어만</label>
+          <label><input type="checkbox" id="ckMin"> 2명 이상만</label>
+          <span class="tsmall" id="cloudStat"></span>
+        </div>
+      </div>
+      <div class="cloud-wrap"><canvas id="cloud"></canvas><div class="cloud-info" id="cloudInfo">단어를 누르면 누가 넣었는지 보여요. 글자 크기 = 넣은 학생 수.</div></div>
+    </div>
+    <div class="tview" id="t-port">
+      <div class="split">
+        <div class="roster">
+          <table>
+            <thead><tr>
+              <th data-k="num">번호</th><th data-k="name">이름</th><th data-k="n">단어</th><th data-k="core">뜻</th><th data-k="root">어근</th><th data-k="syn">유</th><th data-k="ant">반</th>
+            </tr></thead>
+            <tbody id="rosterBody"></tbody>
+          </table>
+        </div>
+        <div class="pstage">
+          <div class="pinfo" id="pinfo">왼쪽에서 학생을 선택하세요.</div>
+          <div class="stage-wrap" id="pstageWrap" style="min-height:260px">
+            <svg id="psvg" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet"><g id="pedges"></g><g id="pnodes"></g></svg>
+            <div class="detail" id="pdetail" hidden></div>
+          </div>
+          <div class="pwords" id="pwords"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<script>
+/* =========================================================
+   설정
+========================================================= */
+const API_URL = 'https://script.google.com/macros/s/AKfycbxNWILgnzh1VH65yD69UUtwJvllLIHP-O0nPWbB6c7nyw_1yqN--G07Yc89KsTFrXBd/exec';            // ← Apps Script 웹앱 URL (비우면 기기 저장만)
+const TEACHER_CODE = 'teacher'; // 학번 칸에 이 값을 넣고, 이름 칸에 교사 비밀번호(Code.gs의 TEACHER_PIN)를 넣으면 교사 모드
+const STORE_PREFIX = 'wordmap2_';
+const PALETTE = ['#3b6ea5','#1d9e75','#d85a30','#7f5ad8','#c4527e','#b07d12','#2a8fb0','#5a8a2a'];
+
+/* =========================================================
+   서버 통신 (JSONP 읽기 / no-cors POST 쓰기)
+========================================================= */
+function jsonp(params, timeout=9000){
+  return new Promise((res, rej)=>{
+    if(!API_URL) return rej(new Error('no api'));
+    const cb='__wm_cb'+Date.now()+Math.floor(Math.random()*1e5);
+    const s=document.createElement('script');
+    const t=setTimeout(()=>{cleanup(); rej(new Error('timeout'));}, timeout);
+    function cleanup(){ clearTimeout(t); delete window[cb]; s.remove(); }
+    window[cb]=d=>{cleanup(); res(d);};
+    s.onerror=()=>{cleanup(); rej(new Error('network'));};
+    const q=Object.entries({...params, callback:cb}).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+    s.src=API_URL+(API_URL.includes('?')?'&':'?')+q;
+    document.head.appendChild(s);
+  });
+}
+async function apiSave(num, name, data){
+  if(!API_URL) throw new Error('no api');
+  const body=JSON.stringify({action:'save',num,name,data});
+  let res;
+  try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body}); }
+  catch(e){
+    // 브라우저가 응답을 못 읽는 환경이면 no-cors로 한 번 더 보낸다 (결과 확인은 불가)
+    await fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body});
+    return {ok:true,unverified:true};
+  }
+  let j; try{ j=await res.json(); }catch(e){ throw new Error('bad response'); }
+  if(!j||!j.ok) throw new Error((j&&j.error)||'save failed');
+  return j;
+}
+const ERR_MSG={name_mismatch:'이 학번은 다른 이름으로 등록되어 있어요. 이름을 확인하거나 선생님께 말씀하세요.',
+               bad_pin:'교사 비밀번호가 틀렸어요.', pin_not_set:'Code.gs에서 TEACHER_PIN을 설정한 뒤 다시 배포하세요.',
+               timeout:'서버 응답이 없어요. 잠시 후 다시 시도하세요.', network:'서버에 연결하지 못했어요.'};
+const errText=(e,fallback)=>ERR_MSG[e&&e.message]||fallback;
+
+/* =========================================================
+   세션 / 데이터
+   words: [{word, mean, syn:[], ant:[], pre, root, suf}]
+========================================================= */
+let ME = null;          // {num, name}
+let DATA = [];          // 현재 그래프에 표시되는 단어 배열 (학생 모드: 내 단어)
+let readonly = false;
+let saveTimer=null;
+
+const key = w => (w||'').trim().toLowerCase();
+const find = w => DATA.find(d=>key(d.word)===key(w));
+const splitList = s => (s||'').split(',').map(x=>x.trim()).filter(Boolean);
+const esc = s => (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = d => ({word:key(d.word), mean:d.mean||'', syn:(d.syn||[]).map(key), ant:(d.ant||[]).map(key),
+                    pre:(d.pre||'').trim().toLowerCase(), root:(d.root||'').trim().toLowerCase(), suf:(d.suf||'').trim().toLowerCase()});
+
+function localLoad(num){ try{ const r=localStorage.getItem(STORE_PREFIX+num); if(r) return JSON.parse(r);}catch(e){} return null; }
+function localSave(){ if(!ME) return; try{ localStorage.setItem(STORE_PREFIX+ME.num, JSON.stringify({words:DATA, updated:Date.now()})); }catch(e){} }
+
+function setSave(state, text){
+  const p=document.getElementById('savePill'); p.hidden=false;
+  p.className='pill '+(state==='ok'?'ok':state==='err'?'err':'gray'); p.textContent=text;
+}
+function persist(){
+  if(readonly||!ME) return;
+  localSave();
+  if(!API_URL){ setSave('gray','기기에 저장됨'); return; }
+  setSave('gray','저장 중…');
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{
+    try{ const r=await apiSave(ME.num, ME.name, {words:DATA, updated:Date.now()});
+      setSave('ok',(r.unverified?'서버로 보냄 ':'서버 저장됨 ')+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})); }
+    catch(e){ setSave('err', e.message==='name_mismatch'?'저장 거부됨 — 이름이 등록된 이름과 달라요':'서버 저장 실패 (기기에는 저장됨)'); }
+  },1200);
+}
+
+/* ---------- 단어 추가/삭제 ---------- */
+function _addWord(r){
+  const d0=norm(r); if(!d0.word) return false;
+  let d=find(d0.word);
+  if(d){
+    if(d0.mean) d.mean=d0.mean;
+    if(d0.pre) d.pre=d0.pre; if(d0.root) d.root=d0.root; if(d0.suf) d.suf=d0.suf;
+    d.syn=[...new Set([...d.syn,...d0.syn])]; d.ant=[...new Set([...d.ant,...d0.ant])];
+  }else{ DATA.push(d0); }
+  [...d0.syn,...d0.ant].forEach(w=>{ if(!find(w)) DATA.push({word:key(w),mean:'',syn:[],ant:[],pre:'',root:'',suf:''}); });
+  return true;
+}
+function addWord(r){ _addWord(r); persist(); rebuild(); }
+function addMany(rows){ let n=0; rows.forEach(r=>{ if(_addWord(r)) n++; }); if(n){ persist(); rebuild(); } return n; }
+function delWord(word){
+  const k=key(word);
+  DATA=DATA.filter(d=>key(d.word)!==k);
+  DATA.forEach(d=>{ d.syn=d.syn.filter(w=>key(w)!==k); d.ant=d.ant.filter(w=>key(w)!==k); });
+  persist(); rebuild();
+}
+
+/* =========================================================
+   Datamuse 사전 (추천·미리보기)
+========================================================= */
+const DM='https://api.datamuse.com/words';
+const dmCache=new Map();
+const isWord = s => /^[a-z][a-z'-]*$/.test(s);
+async function dmRelations(word){
+  const k=key(word); if(dmCache.has(k)) return dmCache.get(k);
+  const pick=arr=>[...new Set(arr.map(o=>(o.word||'').toLowerCase()).filter(isWord))].slice(0,8);
+  const res=await Promise.all([
+    fetch(`${DM}?rel_syn=${encodeURIComponent(k)}&max=12`).then(r=>r.json()),
+    fetch(`${DM}?rel_ant=${encodeURIComponent(k)}&max=12`).then(r=>r.json())
+  ]).then(([s,a])=>({syn:pick(s),ant:pick(a)}));
+  dmCache.set(k,res); return res;
+}
+async function recommend(){
+  const have=new Set(DATA.map(d=>key(d.word))); const score={};
+  await Promise.all(DATA.map(async d=>{
+    const r=await dmRelations(d.word);
+    const add=(w,kind)=>{ const k=key(w); if(have.has(k)||!isWord(k)) return; (score[k]=score[k]||{k,syn:new Set(),ant:new Set()})[kind].add(d.word); };
+    r.syn.forEach(w=>add(w,'syn')); r.ant.forEach(w=>add(w,'ant'));
+  }));
+  return Object.values(score).map(s=>({word:s.k,syn:[...s.syn],ant:[...s.ant],n:s.syn.size+s.ant.size}))
+    .filter(s=>s.n>0).sort((a,b)=>b.n-a.n||a.word.localeCompare(b.word)).slice(0,15);
+}
+
+const SAMPLE=[
+  {word:'predict',mean:'예측하다',pre:'pre',root:'dict',suf:'',syn:['forecast','foresee'],ant:['recall']},
+  {word:'dictate',mean:'받아쓰게 하다; 지시하다',pre:'',root:'dict',suf:'ate',syn:['command'],ant:[]},
+  {word:'contradict',mean:'반박하다',pre:'contra',root:'dict',suf:'',syn:['deny','oppose'],ant:['confirm','agree']},
+  {word:'confirm',mean:'확인하다',pre:'con',root:'firm',suf:'',syn:['verify'],ant:['contradict','deny']},
+  {word:'observe',mean:'관찰하다',pre:'ob',root:'serv',suf:'',syn:['watch','notice'],ant:['ignore']},
+  {word:'preserve',mean:'보존하다',pre:'pre',root:'serv',suf:'',syn:['protect','conserve'],ant:['destroy']},
+];
+
+/* =========================================================
+   그래프 렌더러 (학생·교사 공용)
+========================================================= */
+function makeGraph(svgEl, edgesEl, nodesEl, detailEl, opts){
+  const W=800,H=600; const G={nodes:[],links:[],focusKey:null,searchSet:null,searchMatchKey:null,preview:null,previewData:null,alpha:1,raf:null};
+  const getData = opts.getData;
+  function ghostEntries(pk){
+    if(!G.previewData||G.previewData.word!==pk) return [];
+    const owned=new Set(getData().map(d=>key(d.word))); if(owned.has(pk)) return [];
+    const out=[{word:pk,mean:'',syn:G.previewData.syn,ant:G.previewData.ant,ghost:true,primary:true}];
+    [...G.previewData.syn,...G.previewData.ant].forEach(w=>{ const k=key(w); if(!owned.has(k)&&k!==pk&&!out.some(o=>key(o.word)===k)) out.push({word:k,mean:'',syn:[],ant:[],ghost:true}); });
+    return out;
+  }
+  function build(){
+    const prev={}; G.nodes.forEach(n=>prev[n.k]=n);
+    let entries=getData().map(d=>({...d,ghost:false}));
+    if(G.preview) entries=entries.concat(ghostEntries(G.preview));
+    G.nodes=entries.map((d,i)=>{ const k=key(d.word),p=prev[k];
+      return {k,word:d.word,mean:d.mean,root:d.root||'',pre:d.pre||'',suf:d.suf||'',syn:d.syn||[],ant:d.ant||[],ghost:!!d.ghost,primary:!!d.primary,
+        x:p?p.x:W/2+(Math.random()-.5)*260,y:p?p.y:H/2+(Math.random()-.5)*260,vx:0,vy:0,
+        color:d.ghost?(d.primary?'#3b6ea5':'#9bb4cd'):PALETTE[i%PALETTE.length],deg:0}; });
+    const idx={}; G.nodes.forEach(n=>idx[n.k]=n); G.links=[]; const seen=new Set();
+    const push=(a,b,type)=>{ if(!idx[a]||!idx[b]||a===b) return; const id=[a,b].sort().join('|')+'|'+type; if(seen.has(id)) return; seen.add(id);
+      G.links.push({s:idx[a],t:idx[b],type,ghost:idx[a].ghost||idx[b].ghost}); idx[a].deg++; idx[b].deg++; };
+    entries.forEach(d=>{ const a=key(d.word); (d.syn||[]).forEach(w=>push(a,key(w),'syn')); (d.ant||[]).forEach(w=>push(a,key(w),'ant')); });
+    // 같은 어근 연결
+    const byRoot={}; entries.forEach(d=>{ if(d.root&&!d.ghost) (byRoot[d.root]=byRoot[d.root]||[]).push(key(d.word)); });
+    Object.values(byRoot).forEach(arr=>{ for(let i=0;i<arr.length;i++) for(let j=i+1;j<arr.length;j++) push(arr[i],arr[j],'root'); });
+  }
+  function tick(){
+    const k_rep=2600,k_spring=.045,center=.012,damp=.86;
+    for(let i=0;i<G.nodes.length;i++){ const a=G.nodes[i];
+      for(let j=i+1;j<G.nodes.length;j++){ const b=G.nodes[j]; let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy||.01; let d=Math.sqrt(d2); if(d<1)d=1; const f=k_rep/d2,fx=dx/d*f,fy=dy/d*f; a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy; }
+      a.vx+=(W/2-a.x)*center; a.vy+=(H/2-a.y)*center; }
+    G.links.forEach(l=>{ const L=l.type==='syn'?110:l.type==='ant'?190:140; let dx=l.t.x-l.s.x,dy=l.t.y-l.s.y,d=Math.sqrt(dx*dx+dy*dy)||.01; const f=(d-L)*k_spring,fx=dx/d*f,fy=dy/d*f; l.s.vx+=fx;l.s.vy+=fy;l.t.vx-=fx;l.t.vy-=fy; });
+    G.nodes.forEach(n=>{ if(n.fixed) return; n.vx*=damp;n.vy*=damp;n.x+=n.vx;n.y+=n.vy; n.x=Math.max(40,Math.min(W-40,n.x)); n.y=Math.max(36,Math.min(H-36,n.y)); });
+  }
+  const MONO='#c9ced6',MONO_TXT='#aab0ba',MONO_SUB='#c2c7ce';
+  const isNeighbor=k=>G.focusKey&&G.links.some(l=>(l.s.k===G.focusKey&&l.t.k===k)||(l.t.k===G.focusKey&&l.s.k===k));
+  function render(){
+    const hl=G.searchSet; edgesEl.innerHTML='';
+    G.links.forEach(l=>{ const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('class','edge '+l.type+(l.ghost?' ghost':'')); ln.setAttribute('x1',l.s.x);ln.setAttribute('y1',l.s.y);ln.setAttribute('x2',l.t.x);ln.setAttribute('y2',l.t.y);
+      if(hl){ if(!(hl.has(l.s.k)&&hl.has(l.t.k))){ ln.style.stroke=MONO;ln.style.opacity=.5;ln.style.strokeDasharray='none'; } }
+      else if(G.focusKey&&l.s.k!==G.focusKey&&l.t.k!==G.focusKey) ln.style.opacity=.12;
+      edgesEl.appendChild(ln); });
+    nodesEl.querySelectorAll('.node-g').forEach(g=>{ const n=g.__n; g.setAttribute('transform',`translate(${n.x},${n.y})`);
+      if(hl){ const on=n.ghost?true:hl.has(n.k); g.classList.remove('dim','focus'); g.classList.toggle('hit',on&&n.k===G.searchMatchKey);
+        g.__c.style.fill=on?n.color:MONO; g.__t.style.fill=on?'':MONO_TXT; g.__m.style.fill=on?'':MONO_SUB; }
+      else{ g.classList.remove('hit'); g.__c.style.fill=n.color; g.__t.style.fill=''; g.__m.style.fill='';
+        g.classList.toggle('dim',G.focusKey&&n.k!==G.focusKey&&!isNeighbor(n.k)); g.classList.toggle('focus',n.k===G.focusKey); } });
+    renderDetail();
+  }
+  function renderDetail(){
+    if(!detailEl) return;
+    const n=G.nodes.find(x=>x.k===G.focusKey);
+    if(!n){ detailEl.hidden=true; return; }
+    const parts=[n.pre&&n.pre+'-',n.root,n.suf&&'-'+n.suf].filter(Boolean).map(p=>`<span>${esc(p)}</span>`).join('');
+    detailEl.innerHTML=`<div class="w">${esc(n.word)}</div><div class="m">${esc(n.mean)||'(뜻 미입력)'}</div>
+      ${parts?`<div class="parts">${parts}</div>`:''}
+      <div class="rel">${n.syn.length?`<b class="s">유</b> ${esc(n.syn.join(', '))}<br>`:''}${n.ant.length?`<b class="a">반</b> ${esc(n.ant.join(', '))}`:''}</div>`;
+    detailEl.hidden=false;
+  }
+  function buildEls(){
+    nodesEl.innerHTML='';
+    G.nodes.forEach(n=>{ const g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','node-g'+(n.ghost?' ghost':'')); g.__n=n;
+      const r=Math.min(34,18+n.deg*3); n.r=r;
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('class','node-circle');c.setAttribute('r',r);c.setAttribute('fill',n.color);
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('class','node-label');t.setAttribute('text-anchor','middle');t.setAttribute('dy',r+15);t.textContent=n.word;
+      const m=document.createElementNS('http://www.w3.org/2000/svg','text'); m.setAttribute('class','node-mean');m.setAttribute('text-anchor','middle');m.setAttribute('dy',r+28);m.textContent=n.mean;
+      g.appendChild(c);g.appendChild(t);g.appendChild(m); g.__c=c;g.__t=t;g.__m=m; nodesEl.appendChild(g); attachDrag(g,n); });
+  }
+  function run(reset){ if(reset) G.alpha=1; cancelAnimationFrame(G.raf);
+    const loop=()=>{ for(let i=0;i<2;i++) tick(); render(); G.alpha*=.992; if(G.alpha>.02) G.raf=requestAnimationFrame(loop); }; loop(); }
+  function clientToSvg(cx,cy){ const r=svgEl.getBoundingClientRect(); return {x:(cx-r.left)/r.width*W,y:(cy-r.top)/r.height*H}; }
+  function attachDrag(g,n){
+    let dragging=false,moved=false;
+    const down=()=>{dragging=true;moved=false;n.fixed=true;G.alpha=Math.max(G.alpha,.5);run();};
+    const move=(cx,cy)=>{ if(!dragging)return; moved=true; const p=clientToSvg(cx,cy); n.x=p.x;n.y=p.y;n.vx=0;n.vy=0; };
+    const up=()=>{ if(!dragging)return; dragging=false;n.fixed=false; if(!moved){ G.focusKey=G.focusKey===n.k?null:n.k; render(); } };
+    g.addEventListener('mousedown',e=>{e.preventDefault();down(); const mm=e=>move(e.clientX,e.clientY),mu=()=>{up();window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu);}; window.addEventListener('mousemove',mm);window.addEventListener('mouseup',mu);});
+    g.addEventListener('touchstart',()=>down(),{passive:true});
+    g.addEventListener('touchmove',e=>{const t=e.touches[0];move(t.clientX,t.clientY);e.preventDefault();},{passive:false});
+    g.addEventListener('touchend',up);
+  }
+  svgEl.addEventListener('mousedown',e=>{ if(e.target===svgEl||e.target===edgesEl||e.target===nodesEl){G.focusKey=null;render();} });
+  G.refresh=()=>{ build(); buildEls(); run(true); };
+  G.render=render;
+  return G;
+}
+
+const SG = makeGraph(document.getElementById('svg'),document.getElementById('edges'),document.getElementById('nodes'),document.getElementById('detail'),{getData:()=>DATA});
+
+/* =========================================================
+   학생 UI
+========================================================= */
+function rebuild(){
+  SG.refresh(); renderList(); updateStat(); recsCache=null;
+  if(document.getElementById('v-rec').classList.contains('on')) ensureRecs(); else renderRec();
+  document.getElementById('emptyHint').style.display=DATA.length?'none':'flex';
+  doSearch();
+}
+function updateStat(){ document.getElementById('statPill').textContent=`단어 ${DATA.length}개`; }
+function renderList(){
+  const el=document.getElementById('wordList');
+  document.getElementById('listCount').textContent=DATA.length?`총 ${DATA.length}개 — 완벽히 외운 단어는 삭제하세요`:'';
+  if(!DATA.length){ el.innerHTML='<div class="muted-box">아직 단어가 없어요.</div>'; return; }
+  const idx={}; SG.nodes.forEach(n=>idx[n.k]=n); el.innerHTML='';
+  DATA.slice().sort((a,b)=>a.word.localeCompare(b.word)).forEach(d=>{
+    const node=idx[key(d.word)];
+    const parts=[d.pre&&d.pre+'-',d.root,d.suf&&'-'+d.suf].filter(Boolean).join(' + ');
+    const tags=[parts?`<span style="color:var(--root)">${esc(parts)}</span>`:'', d.syn.length?`<span style="color:var(--syn)">유의어 ${d.syn.length}</span>`:'', d.ant.length?`<span style="color:var(--ant)">반의어 ${d.ant.length}</span>`:''].filter(Boolean).join(' · ')||'<span>연결 없음</span>';
+    const div=document.createElement('div'); div.className='item';
+    div.innerHTML=`<span class="swatch" style="background:${node?node.color:'#ccc'}"></span><div class="grow"><div class="w">${esc(d.word)} <span class="m">${esc(d.mean)}</span></div><div class="tags">${tags}</div></div><button class="del">삭제</button>`;
+    div.querySelector('.del').onclick=()=>{ if(confirm(`'${d.word}' 단어를 지도에서 삭제할까요?`)) delWord(d.word); };
+    el.appendChild(div);
+  });
+}
+let recsCache=null,recsLoading=false; const recEl=()=>document.getElementById('recList');
+function ensureRecs(){ if(recsLoading) return; if(recsCache===null) loadRecs(); else renderRec(); }
+async function loadRecs(){ if(!DATA.length){renderRec();return;} recsLoading=true; renderRec();
+  try{ recsCache=await recommend(); }catch(e){ recsCache=null;recsLoading=false; recEl().innerHTML='<div class="muted-box">온라인 사전에 연결하지 못했어요.</div>'; return; }
+  recsLoading=false; renderRec(); }
+function renderRec(){
+  const el=recEl();
+  if(!DATA.length){ el.innerHTML='<div class="muted-box">먼저 단어를 추가하면 관련 단어를 추천해 드려요.</div>'; return; }
+  if(recsLoading){ el.innerHTML='<div class="muted-box">온라인 사전에서 추천 단어를 불러오는 중…</div>'; return; }
+  if(recsCache===null){ el.innerHTML='<button class="act" id="recLoadBtn">추천 단어 불러오기</button>'; el.querySelector('#recLoadBtn').onclick=loadRecs; return; }
+  if(!recsCache.length){ el.innerHTML='<div class="muted-box">추천할 만한 단어를 찾지 못했어요.</div>'; return; }
+  el.innerHTML='';
+  recsCache.forEach(r=>{ const why=[r.syn.length?`<span class="s">${esc(r.syn.slice(0,2).join(', '))}</span>의 유의어`:'', r.ant.length?`<span class="a">${esc(r.ant.slice(0,2).join(', '))}</span>의 반의어`:''].filter(Boolean).join(' · ');
+    const div=document.createElement('div'); div.className='rec';
+    div.innerHTML=`<div class="grow"><div class="w">${esc(r.word)}</div><div class="why">${why}</div></div><button class="add">＋ 추가</button>`;
+    div.querySelector('.add').onclick=()=>addWord({word:r.word,mean:'',syn:r.syn,ant:r.ant}); el.appendChild(div); });
+  const refresh=document.createElement('button'); refresh.className='csvbtn'; refresh.style.marginTop='6px'; refresh.textContent='↻ 추천 새로고침'; refresh.onclick=loadRecs; el.appendChild(refresh);
+}
+
+document.getElementById('btnAdd').onclick=()=>{
+  const v=id=>document.getElementById(id).value;
+  if(!v('inWord').trim()){ document.getElementById('inWord').focus(); return; }
+  addWord({word:v('inWord'),mean:v('inMean'),pre:v('inPre'),root:v('inRoot'),suf:v('inSuf'),syn:splitList(v('inSyn')),ant:splitList(v('inAnt'))});
+  ['inWord','inMean','inPre','inRoot','inSuf','inSyn','inAnt'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('inWord').focus();
+};
+document.getElementById('inAnt').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('btnAdd').click(); });
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n'); const rows=[]; let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=c; }
+    else{ if(c==='"') q=true; else if(c===','){row.push(cell);cell='';} else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell='';} else cell+=c; } }
+  if(cell!==''||row.length){row.push(cell);rows.push(row);} return rows.filter(r=>r.some(x=>x.trim()!==''));
+}
+const multi=s=>(s||'').split(/[;/,]/).map(x=>x.trim()).filter(Boolean);
+function importCSV(text){
+  const msg=document.getElementById('csvMsg'); let rows;
+  try{ rows=parseCSV(text); }catch(e){ msg.className='csv-msg err'; msg.textContent='파일을 읽지 못했어요.'; return; }
+  if(!rows.length){ msg.className='csv-msg err'; msg.textContent='내용이 비어 있어요.'; return; }
+  const h=rows[0].map(x=>x.trim().toLowerCase()); if(['word','단어','영어','영단어'].includes(h[0])) rows=rows.slice(1);
+  const parsed=rows.map(r=>({word:(r[0]||'').trim(),mean:(r[1]||'').trim(),syn:multi(r[2]),ant:multi(r[3]),pre:(r[4]||'').trim(),root:(r[5]||'').trim(),suf:(r[6]||'').trim()})).filter(r=>r.word);
+  if(!parsed.length){ msg.className='csv-msg err'; msg.textContent='추가할 단어를 찾지 못했어요.\n첫 칸에 영어 단어가 있는지 확인하세요.'; return; }
+  const before=DATA.length; addMany(parsed);
+  msg.className='csv-msg ok'; msg.textContent=`✓ ${parsed.length}줄 처리 — 단어 ${DATA.length-before}개 새로 추가됨 (총 ${DATA.length}개).`;
+}
+document.getElementById('btnCsvPick').onclick=()=>document.getElementById('csvFile').click();
+document.getElementById('csvFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{importCSV(rd.result);e.target.value='';}; rd.readAsText(f,'utf-8'); });
+document.getElementById('btnCsvTemplate').onclick=()=>{
+  const sample='word,mean,synonyms,antonyms,prefix,root,suffix\npredict,예측하다,forecast; foresee,recall,pre,dict,\ncontradict,반박하다,deny; oppose,confirm; agree,contra,dict,\nobserve,관찰하다,watch; notice,ignore,ob,serv,\n';
+  downloadText('word-map-template.csv','\uFEFF'+sample,'text/csv;charset=utf-8');
+};
+function downloadText(name,text,type){ const blob=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href); }
+document.getElementById('btnSample').onclick=()=>addMany(SAMPLE);
+document.getElementById('btnExport').onclick=()=>downloadText(`wordmap_${ME?ME.num:'me'}.json`,JSON.stringify({num:ME&&ME.num,name:ME&&ME.name,words:DATA},null,2),'application/json');
+document.getElementById('btnClear').onclick=()=>{ if(confirm('모든 단어를 지울까요? 되돌릴 수 없어요.')){ DATA=[]; persist(); rebuild(); } };
+
+document.querySelectorAll('#panel .tab').forEach(t=>{ t.onclick=()=>{
+  document.querySelectorAll('#panel .tab').forEach(x=>x.classList.remove('on')); document.querySelectorAll('#panel .view').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on'); document.getElementById('v-'+t.dataset.v).classList.add('on');
+  if(t.dataset.v==='rec') ensureRecs(); if(t.dataset.v==='list') renderList(); }; });
+
+/* ---------- 검색 / 미리보기 ---------- */
+const searchInput=document.getElementById('search'),searchClearBtn=document.getElementById('searchClear'),previewCard=document.getElementById('previewCard');
+const ownedHas=q=>DATA.some(d=>key(d.word)===q), ownedHasPartial=q=>DATA.some(d=>key(d.word).includes(q));
+let searchTimer=null,previewSeq=0;
+function clearPreview(){ if(SG.preview||SG.previewData){ SG.preview=null;SG.previewData=null; SG.refresh(); } }
+function doSearch(){
+  const q=searchInput.value.trim().toLowerCase(); searchClearBtn.hidden=!q;
+  if(!q||ownedHasPartial(q)){ clearTimeout(searchTimer); previewSeq++; searchInput.classList.remove('loading'); clearPreview(); applyHighlight(); return; }
+  applyHighlight(); schedulePreview(q);
+}
+function schedulePreview(q){
+  clearTimeout(searchTimer); const seq=++previewSeq; searchInput.classList.add('loading');
+  searchTimer=setTimeout(async()=>{ let r; try{ r=await dmRelations(q); }catch(e){ r=null; } searchInput.classList.remove('loading');
+    if(seq!==previewSeq) return; if(searchInput.value.trim().toLowerCase()!==q||ownedHasPartial(q)) return;
+    if(!r||(r.syn.length+r.ant.length)===0){ clearPreview(); applyHighlight(); return; }
+    SG.preview=q; SG.previewData={word:q,syn:r.syn,ant:r.ant}; SG.refresh(); applyHighlight(); },350);
+}
+function applyHighlight(){
+  const q=searchInput.value.trim().toLowerCase(); updatePreviewCard();
+  if(!q){ SG.searchSet=null;SG.searchMatchKey=null; SG.render(); return; }
+  if(SG.preview&&SG.previewData){ const have=new Set(SG.nodes.map(n=>n.k)); SG.searchSet=new Set([SG.preview,...SG.previewData.syn.map(key),...SG.previewData.ant.map(key)].filter(k=>have.has(k))); SG.searchMatchKey=SG.preview; SG.focusKey=null; SG.render(); return; }
+  let matched=SG.nodes.filter(n=>!n.ghost&&n.k===q); if(!matched.length) matched=SG.nodes.filter(n=>!n.ghost&&n.k.includes(q));
+  if(!matched.length){ SG.searchSet=new Set(); SG.searchMatchKey=null; SG.render(); return; }
+  SG.searchMatchKey=matched.length===1?matched[0].k:null; const set=new Set();
+  matched.forEach(m=>{ set.add(m.k); SG.links.forEach(l=>{ if(l.s.k===m.k) set.add(l.t.k); if(l.t.k===m.k) set.add(l.s.k); }); });
+  SG.searchSet=set; SG.focusKey=null; SG.render();
+}
+function updatePreviewCard(){
+  if(SG.preview&&SG.previewData){ document.getElementById('pcWord').textContent=SG.preview;
+    const cnt=[...SG.previewData.syn,...SG.previewData.ant].filter(w=>ownedHas(key(w))).length;
+    document.getElementById('pcTag').textContent=cnt?`온라인 사전 · 내 단어 ${cnt}개와 연결돼요`:'온라인 사전 미리보기 · 내 단어장엔 없음'; previewCard.hidden=false; }
+  else previewCard.hidden=true;
+}
+document.getElementById('pcAdd').onclick=()=>{ if(!SG.preview||!SG.previewData) return; const pk=SG.preview,pd=SG.previewData;
+  searchInput.value=''; searchClearBtn.hidden=true; SG.preview=null;SG.previewData=null;SG.searchSet=null;SG.searchMatchKey=null; addWord({word:pk,mean:'',syn:pd.syn,ant:pd.ant}); };
+searchInput.addEventListener('input',doSearch);
+searchClearBtn.addEventListener('click',()=>{ searchInput.value=''; doSearch(); searchInput.focus(); });
+
+/* =========================================================
+   로그인
+========================================================= */
+const gate=document.getElementById('gate');
+async function startStudent(num,name){
+  const gErr=document.getElementById('gErr');
+  const local=localLoad(num); let words=null, saveState=null;
+  gErr.textContent='서버에서 불러오는 중…';
+  if(API_URL){
+    try{ const r=await jsonp({action:'load',num,name});
+      if(r&&r.ok&&r.found&&r.data&&Array.isArray(r.data.words)){
+        const srvT=r.data.updated||0, locT=local?local.updated||0:0;
+        words=(local&&locT>srvT+5000&&local.words.length>=r.data.words.length)?local.words:r.data.words; // 로컬이 더 최신이면 로컬 우선
+        saveState=['ok','서버에서 불러옴'];
+      }else if(r&&r.ok){ words=local?local.words:[]; saveState=['gray','새 지도']; }
+      else if(r&&r.error==='name_mismatch'){ gErr.textContent=ERR_MSG.name_mismatch; return false; }
+      else throw new Error((r&&r.error)||'bad');
+    }catch(e){ words=local?local.words:[]; saveState=['err','서버 연결 실패 — 기기 저장본 사용']; }
+  }else{ words=local?local.words:[]; saveState=['gray','기기 저장 모드']; }
+  ME={num,name}; readonly=false; document.body.classList.remove('teacher');
+  document.getElementById('who').textContent=`${num} ${name}`; document.getElementById('btnLogout').hidden=false;
+  setSave(saveState[0],saveState[1]);
+  DATA=(words||[]).map(norm); gate.style.display='none'; gErr.textContent=''; rebuild();
+  if(API_URL&&local&&words===local.words) persist();
+  return true;
+}
+document.getElementById('gBtn').onclick=async()=>{
+  const num=document.getElementById('gNum').value.trim(), name=document.getElementById('gName').value.trim(), err=document.getElementById('gErr');
+  if(num.toLowerCase()===TEACHER_CODE){ err.textContent='확인 중…'; const ok=await startTeacher(name); if(!ok) return; err.textContent=''; return; }
+  if(!/^\d{4}$/.test(num)){ err.textContent='학번은 숫자 4자리로 입력하세요. (예: 2103)'; return; }
+  if(!name){ err.textContent='이름을 입력하세요.'; return; }
+  err.textContent=''; await startStudent(num,name);
+};
+document.getElementById('gName').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('gBtn').click(); });
+document.getElementById('btnLogout').onclick=()=>location.reload();
+
+/* =========================================================
+   교사 모드
+========================================================= */
+let ALL=[]; let TDATA=[]; let curStudent=null; let sortKey='num',sortDir=1;
+const PG = makeGraph(document.getElementById('psvg'),document.getElementById('pedges'),document.getElementById('pnodes'),document.getElementById('pdetail'),{getData:()=>TDATA});
+
+function demoStudents(){
+  const pool=[
+    ['observe','관찰하다','ob','serv','',['watch','notice'],['ignore']],['observation','관찰','ob','serv','ation',['study'],[]],
+    ['preserve','보존하다','pre','serv','',['protect','conserve'],['destroy']],['predict','예측하다','pre','dict','',['forecast','foresee'],['recall']],
+    ['contradict','반박하다','contra','dict','',['deny','oppose'],['confirm']],['dictate','지시하다','','dict','ate',['command'],[]],
+    ['classify','분류하다','','class','ify',['sort','categorize'],['mix']],['participate','참여하다','','part','icipate',['join','take part'],['withdraw']],
+    ['contribute','기여하다','con','tribute','',['donate','add'],['withhold']],['analyze','분석하다','','analy','ze',['examine','study'],['ignore']],
+    ['discover','발견하다','dis','cover','',['find','detect'],['hide']],['identify','식별하다','','ident','ify',['recognize','spot'],['confuse']],
+    ['amateur','아마추어','','','',['beginner','novice'],['professional']],['professional','전문가','pro','fess','ional',['expert'],['amateur']],
+    ['volunteer','자원하다','','volunt','eer',['offer'],['refuse']],['phenomenon','현상','','','',['event','occurrence'],[]],
+    ['detect','감지하다','de','tect','',['discover','notice'],['miss']],['collect','수집하다','col','lect','',['gather'],['scatter']],
+    ['inspect','조사하다','in','spect','',['examine','check'],[]],['spectator','관중','','spect','ator',['viewer','audience'],['participant']]
+  ];
+  const names=['김민준','이서연','박지호','최수아','정도윤','강하은','조예준','윤지우','임서준','한채원','오시우','서지민'];
+  const out=[]; let seed=7; const rnd=()=>(seed=(seed*9301+49297)%233280)/233280;
+  names.forEach((nm,i)=>{ const cls=i<6?'21':'22'; const num=cls+String(i%6+1).padStart(2,'0');
+    const k=6+Math.floor(rnd()*9); const words=[]; const used=new Set();
+    for(let j=0;j<k;j++){ const idx=j<3?j:Math.floor(rnd()*pool.length); if(used.has(idx)) continue; used.add(idx);
+      const p=pool[idx]; words.push({word:p[0],mean:p[1],pre:p[2],root:p[3],suf:p[4],syn:p[5],ant:p[6]});
+      [...p[5],...p[6]].forEach(w=>{ if(!words.some(x=>x.word===w)) words.push({word:w,mean:'',pre:'',root:'',suf:'',syn:[],ant:[]}); }); }
+    out.push({num,name:nm,updated:'2026-09-19 14:'+String(10+i).padStart(2,'0'),words:words.map(norm)}); });
+  return out;
+}
+let TEACHER_PIN_INPUT='';
+async function startTeacher(pin){
+  TEACHER_PIN_INPUT=pin||'';
+  if(API_URL){
+    // 진입 전에 비밀번호를 서버에서 확인한다
+    let r; try{ r=await jsonp({action:'all',pin:TEACHER_PIN_INPUT},20000); }catch(e){ r={ok:false,error:e.message}; }
+    if(!r||!r.ok){ document.getElementById('gErr').textContent=errText({message:r&&r.error},'서버에 연결하지 못했어요. 잠시 후 다시 시도하세요.'); return false; }
+  }
+  document.body.classList.add('teacher'); readonly=true; ME={num:'teacher',name:'교사'};
+  document.getElementById('who').textContent='교사 모드'; document.getElementById('btnLogout').hidden=false;
+  document.getElementById('subTitle').textContent='학생 포트폴리오 · 반 전체 워드클라우드';
+  gate.style.display='none';
+  await loadAll();
+  return true;
+}
+async function loadAll(){
+  document.getElementById('statPill').textContent='불러오는 중…';
+  if(!API_URL){
+    ALL=demoStudents(); document.getElementById('statPill').textContent=`예시 학생 ${ALL.length}명`;
+    document.getElementById('cloudInfo').innerHTML='<b>미리보기 모드(예시 데이터)</b> — API_URL을 넣으면 실제 학생 데이터가 여기에 모여요. 단어를 누르면 누가 넣었는지 보여요.';
+    ALL.sort((a,b)=>a.num.localeCompare(b.num));
+    const sel=document.getElementById('classSel'); const classes=[...new Set(ALL.map(s=>s.num.slice(0,2)))].sort();
+    sel.innerHTML='<option value="">전체</option>'+classes.map(c=>`<option value="${c}">${c[0]}학년 ${parseInt(c[1],10)}반</option>`).join('');
+    renderRoster(); drawCloud(); return;
+  }
+  try{ const r=await jsonp({action:'all',pin:TEACHER_PIN_INPUT},20000); if(!r||!r.ok) throw new Error((r&&r.error)||'bad');
+    ALL=(r.students||[]).map(s=>({num:s.num,name:s.name,updated:s.updated,words:((s.data&&s.data.words)||[]).map(norm)})); }
+  catch(e){ ALL=[]; document.getElementById('cloudInfo').innerHTML='<b>'+esc(errText(e,'서버에서 불러오지 못했어요.'))+'</b> 새로고침을 눌러 다시 시도하세요.'; }
+  ALL.sort((a,b)=>a.num.localeCompare(b.num));
+  const sel=document.getElementById('classSel'); const classes=[...new Set(ALL.map(s=>s.num.slice(0,2)))].sort();
+  const cur=sel.value; sel.innerHTML='<option value="">전체</option>'+classes.map(c=>`<option value="${c}">${c[0]}학년 ${parseInt(c[1],10)}반</option>`).join(''); if(classes.includes(cur)) sel.value=cur;
+  document.getElementById('statPill').textContent=`학생 ${ALL.length}명`;
+  renderRoster(); drawCloud();
+}
+const filtered=()=>{ const c=document.getElementById('classSel').value; return c?ALL.filter(s=>s.num.startsWith(c)):ALL; };
+const stats=s=>({n:s.words.length,core:s.words.filter(w=>w.mean).length,root:new Set(s.words.filter(w=>w.root).map(w=>w.root)).size,syn:s.words.reduce((a,w)=>a+w.syn.length,0),ant:s.words.reduce((a,w)=>a+w.ant.length,0)});
+
+function renderRoster(){
+  const tb=document.getElementById('rosterBody'); const rows=filtered().map(s=>({s,...stats(s)}));
+  rows.sort((a,b)=>{ const va=sortKey==='num'?a.s.num:sortKey==='name'?a.s.name:a[sortKey], vb=sortKey==='num'?b.s.num:sortKey==='name'?b.s.name:b[sortKey]; return (va>vb?1:va<vb?-1:0)*sortDir; });
+  tb.innerHTML=rows.map(r=>`<tr data-num="${r.s.num}" class="${curStudent===r.s.num?'on':''}"><td class="num">${esc(r.s.num)}</td><td><b>${esc(r.s.name)}</b></td><td>${r.n}</td><td>${r.core}</td><td>${r.root}</td><td>${r.syn}</td><td>${r.ant}</td></tr>`).join('')||'<tr><td colspan="7" class="muted-box">데이터 없음</td></tr>';
+  tb.querySelectorAll('tr[data-num]').forEach(tr=>tr.onclick=()=>showStudent(tr.dataset.num));
+}
+document.querySelectorAll('.roster th').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else{ sortKey=k; sortDir=(k==='num'||k==='name')?1:-1; } renderRoster(); });
+
+function showStudent(num){
+  const s=ALL.find(x=>x.num===num); if(!s) return; curStudent=num; renderRoster();
+  const st=stats(s);
+  document.getElementById('pinfo').innerHTML=`<b>${esc(s.num)} ${esc(s.name)}</b><span class="pill">단어 ${st.n}</span><span class="pill" style="background:var(--root-soft);color:var(--root)">어근 ${st.root}</span><span class="pill" style="background:var(--syn-soft);color:var(--syn)">유의어 ${st.syn}</span><span class="pill" style="background:var(--ant-soft);color:var(--ant)">반의어 ${st.ant}</span><span class="tsmall">수정 ${esc(s.updated||'')}</span>`;
+  TDATA=s.words; PG.focusKey=null; PG.refresh();
+  document.getElementById('pwords').innerHTML=s.words.slice().sort((a,b)=>a.word.localeCompare(b.word)).map(w=>`<span class="${w.mean?'core':''}" title="${esc(w.mean)}">${esc(w.word)}${w.mean?' <i style="color:var(--muted);font-style:normal">'+esc(w.mean)+'</i>':''}</span>`).join('')||'<span class="tsmall">단어 없음</span>';
+}
+document.getElementById('classSel').onchange=()=>{ renderRoster(); drawCloud(); };
+document.getElementById('btnReload').onclick=loadAll;
+document.querySelectorAll('.tbar .tab[data-t]').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tbar .tab[data-t]').forEach(x=>x.classList.remove('on')); document.querySelectorAll('.tview').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on'); document.getElementById('t-'+t.dataset.t).classList.add('on');
+  if(t.dataset.t==='cloud') drawCloud(); if(t.dataset.t==='port'&&curStudent) PG.refresh(); });
+document.getElementById('btnCsvOut').onclick=()=>{
+  const rows=[['번호','이름','단어수','뜻입력수','서로다른어근수','유의어수','반의어수','수정시각','단어목록']];
+  filtered().forEach(s=>{ const st=stats(s); rows.push([s.num,s.name,st.n,st.core,st.root,st.syn,st.ant,s.updated||'',s.words.map(w=>w.word).join(' ')]); });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadText(`wordmap_class_${document.getElementById('classSel').value||'all'}.csv`,'\uFEFF'+csv,'text/csv;charset=utf-8');
+};
+
+/* ---------- 워드클라우드 (외부 라이브러리 없이 canvas 나선 배치) ---------- */
+const cv=document.getElementById('cloud'); let cloudRects=[];
+function aggregate(){
+  const coreOnly=document.getElementById('ckCore').checked, minTwo=document.getElementById('ckMin').checked;
+  const map={};
+  filtered().forEach(s=>{ const seen=new Set(); s.words.forEach(w=>{ if(coreOnly&&!w.mean) return; const k=w.word; if(seen.has(k)) return; seen.add(k);
+    (map[k]=map[k]||{word:k,n:0,who:[],means:new Set()}).n++; map[k].who.push(s.num+' '+s.name); if(w.mean) map[k].means.add(w.mean); }); });
+  return Object.values(map).filter(w=>!minTwo||w.n>=2).sort((a,b)=>b.n-a.n||a.word.localeCompare(b.word));
+}
+function drawCloud(){
+  const wrap=cv.parentElement; const dpr=window.devicePixelRatio||1; const W=wrap.clientWidth, H=wrap.clientHeight;
+  if(!W||!H) return; cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+'px'; cv.style.height=H+'px';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H); cloudRects=[];
+  const words=aggregate(); const students=filtered().length;
+  document.getElementById('cloudStat').textContent=`학생 ${students}명 · 단어 ${words.length}종`;
+  if(!words.length){ ctx.fillStyle='#6b7280'; ctx.font='14px sans-serif'; ctx.textAlign='center'; ctx.fillText('표시할 단어가 없어요.',W/2,H/2); return; }
+  const max=words[0].n, min=words[words.length-1].n;
+  const size=n=>{ const t=max===min?1:(n-min)/(max-min); return Math.round(13+Math.pow(t,.7)*(Math.min(W,H)/9)); };
+  const cx=W/2, cy=H/2; const placed=[];
+  const collide=r=>r.x<4||r.y<4||r.x+r.w>W-4||r.y+r.h>H-4||placed.some(p=>!(r.x+r.w<p.x||p.x+p.w<r.x||r.y+r.h<p.y||p.y+p.h<r.y));
+  ctx.textBaseline='middle'; ctx.textAlign='center';
+  words.slice(0,180).forEach((wd,i)=>{
+    const fs=size(wd.n); ctx.font=`${wd.n>=3?'700':'600'} ${fs}px -apple-system,"Segoe UI","Malgun Gothic",sans-serif`;
+    const tw=ctx.measureText(wd.word).width+6, th=fs*1.15;
+    let placedOk=false;
+    for(let t=0;t<2400;t+=1){ const a=t*0.12, rad=2.2*a; const x=cx+rad*Math.cos(a)-tw/2, y=cy+rad*Math.sin(a)*0.75-th/2;
+      const r={x,y,w:tw,h:th}; if(!collide(r)){ placed.push(r); r.wd=wd; cloudRects.push(r); ctx.fillStyle=PALETTE[i%PALETTE.length]; ctx.fillText(wd.word,x+tw/2,y+th/2); placedOk=true; break; } }
+    if(!placedOk) return;
+  });
+}
+cv.addEventListener('click',e=>{ const r=cv.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top;
+  const hit=cloudRects.find(q=>x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h); const info=document.getElementById('cloudInfo');
+  if(!hit){ info.innerHTML='단어를 누르면 누가 넣었는지 보여요. 글자 크기 = 넣은 학생 수.'; return; }
+  const w=hit.wd; info.innerHTML=`<b>${esc(w.word)}</b> — ${w.n}명 ${w.means.size?'· 뜻: '+esc([...w.means].join(' / ')):''}<br><span class="tsmall">${esc(w.who.join(', '))}</span>`; });
+['ckCore','ckMin'].forEach(id=>document.getElementById(id).onchange=drawCloud);
+window.addEventListener('resize',()=>{ if(document.body.classList.contains('teacher')) drawCloud(); });
+
+/* 시작: 로그인 대기 */
+document.getElementById('gNum').focus();
+</script>
+</body>
+</html>
