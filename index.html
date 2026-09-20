@@ -196,6 +196,7 @@
     <div class="field"><label class="fld" id="gNameLabel">이름</label><input type="text" id="gName" placeholder="예: 홍길동" autocomplete="off"></div>
     <div class="err" id="gErr"></div>
     <button class="act" id="gBtn">시작하기</button>
+    <div class="hint" style="text-align:right;margin-top:10px;opacity:.6" id="gVer"></div>
   </div>
 </div>
 
@@ -343,6 +344,8 @@
    설정
 ========================================================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxNWILgnzh1VH65yD69UUtwJvllLIHP-O0nPWbB6c7nyw_1yqN--G07Yc89KsTFrXBd/exec';            // ← Apps Script 웹앱 URL (비우면 기기 저장만)
+const APP_VERSION = '2026-09-20.6'; // 배포 확인용 (로그인 창 하단에 표시)
+const SESSION_HOURS = 6;            // 로그인 유지 시간. '나가기'를 누르면 즉시 해제
 const TEACHER_CODE = 'teacher'; // 학번 칸에 이 값을 넣고, 이름 칸에 교사 비밀번호(Code.gs의 TEACHER_PIN)를 넣으면 교사 모드
 const STORE_PREFIX = 'wordmap2_';
 // 학번 규칙: 4자리 = 학년(1) + 반(1) + 번호(2). 예) 2401 → 2학년 4반 1번
@@ -703,9 +706,10 @@ searchClearBtn.addEventListener('click',()=>{ searchInput.value=''; doSearch(); 
 const gate=document.getElementById('gate');
 // 새로고침해도 로그인 유지 (탭 세션 저장소: 탭을 닫거나 '나가기'를 누르면 사라짐)
 const SESSION_KEY='wm_session';
-function saveSession(obj){ try{ sessionStorage.setItem(SESSION_KEY, JSON.stringify(obj)); }catch(e){} }
-function loadSession(){ try{ const r=sessionStorage.getItem(SESSION_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
-function clearSession(){ try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){} }
+// 기기 저장소에 만료 시각과 함께 보관한다 (새 탭·새로고침 모두 유지, SESSION_HOURS 지나면 해제)
+function saveSession(obj){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify({...obj, exp:Date.now()+SESSION_HOURS*3600*1000})); }catch(e){} }
+function loadSession(){ try{ const r=localStorage.getItem(SESSION_KEY); if(!r) return null; const o=JSON.parse(r); if(!o.exp||o.exp<Date.now()){ clearSession(); return null; } return o; }catch(e){ return null; } }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); }catch(e){} }
 async function startStudent(num,name){
   const gErr=document.getElementById('gErr');
   const local=localLoad(num); let words=null, saveState=null;
@@ -933,11 +937,19 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&cloudView.classLis
 window.addEventListener('resize',()=>{ if(document.body.classList.contains('teacher')) drawCloud(); });
 
 /* 시작: 이전 세션이 있으면 자동 로그인, 없으면 로그인 대기 */
+document.getElementById('gVer').textContent='v'+APP_VERSION;
 (async()=>{
   const ses=loadSession();
-  if(ses&&ses.type==='teacher'){ document.getElementById('gNum').value=TEACHER_CODE; syncGateMode(); const ok=await startTeacher(ses.pin||''); if(!ok) clearSession(); return; }
-  if(ses&&ses.type==='student'&&/^\d{4}$/.test(ses.num||'')&&ses.name){ document.getElementById('gNum').value=ses.num; document.getElementById('gName').value=ses.name; const ok=await startStudent(ses.num,ses.name); if(!ok) clearSession(); return; }
-  document.getElementById('gNum').focus();
+  const isTeacher=ses&&ses.type==='teacher';
+  const isStudent=ses&&ses.type==='student'&&/^\d{4}$/.test(ses.num||'')&&!!ses.name;
+  if(!isTeacher&&!isStudent){ document.getElementById('gNum').focus(); return; }
+  gate.style.display='none'; setSave('gray','이전 로그인 복원 중…');   // 복원 중에는 로그인 창을 띄우지 않는다
+  let ok=false;
+  try{
+    if(isTeacher){ document.getElementById('gNum').value=TEACHER_CODE; syncGateMode(); ok=await startTeacher(ses.pin||''); }
+    else{ document.getElementById('gNum').value=ses.num; document.getElementById('gName').value=ses.name; ok=await startStudent(ses.num,ses.name); }
+  }catch(e){ ok=false; }
+  if(!ok){ clearSession(); gate.style.display=''; document.getElementById('savePill').hidden=true; document.getElementById('gNum').focus(); }
 })();
 </script>
 </body>
