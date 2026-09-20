@@ -291,7 +291,9 @@
     <div class="tab on" data-t="cloud">☁️ 워드클라우드</div>
     <div class="tab" data-t="port">📚 학생 포트폴리오</div>
     <div class="grow"></div>
-    <select id="classSel"><option value="">전체</option></select>
+    <label class="tsmall" for="gradeSel">학년</label><select id="gradeSel"><option value="">전체</option></select>
+    <label class="tsmall" for="classSel">반</label><select id="classSel"><option value="">전체</option></select>
+    <span class="pill" id="scopePill">전체</span>
     <button class="csvbtn" style="flex:none;padding:8px 12px" id="btnReload">↻ 새로고침</button>
     <button class="csvbtn" style="flex:none;padding:8px 12px" id="btnCsvOut">CSV 내보내기</button>
   </div>
@@ -337,6 +339,9 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbxNWILgnzh1VH65yD69UUtwJvllLIHP-O0nPWbB6c7nyw_1yqN--G07Yc89KsTFrXBd/exec';            // ← Apps Script 웹앱 URL (비우면 기기 저장만)
 const TEACHER_CODE = 'teacher'; // 학번 칸에 이 값을 넣고, 이름 칸에 교사 비밀번호(Code.gs의 TEACHER_PIN)를 넣으면 교사 모드
 const STORE_PREFIX = 'wordmap2_';
+// 학번 규칙: 4자리 = 학년(1) + 반(1) + 번호(2). 예) 2401 → 2학년 4반 1번
+const NUM_RULE = { grade:[0,1], cls:[1,2], no:[2,4] };
+const parseNum = num => ({ grade:num.slice(...NUM_RULE.grade), cls:num.slice(...NUM_RULE.cls), no:num.slice(...NUM_RULE.no) });
 const PALETTE = ['#3b6ea5','#1d9e75','#d85a30','#7f5ad8','#c4527e','#b07d12','#2a8fb0','#5a8a2a'];
 
 /* =========================================================
@@ -743,7 +748,7 @@ function demoStudents(){
   ];
   const names=['김민준','이서연','박지호','최수아','정도윤','강하은','조예준','윤지우','임서준','한채원','오시우','서지민'];
   const out=[]; let seed=7; const rnd=()=>(seed=(seed*9301+49297)%233280)/233280;
-  names.forEach((nm,i)=>{ const cls=i<6?'21':'22'; const num=cls+String(i%6+1).padStart(2,'0');
+  names.forEach((nm,i)=>{ const cls=i<4?'21':i<8?'24':'13'; const num=cls+String(i%4+1).padStart(2,'0');
     const k=6+Math.floor(rnd()*9); const words=[]; const used=new Set();
     for(let j=0;j<k;j++){ const idx=j<3?j:Math.floor(rnd()*pool.length); if(used.has(idx)) continue; used.add(idx);
       const p=pool[idx]; words.push({word:p[0],mean:p[1],pre:p[2],root:p[3],suf:p[4],syn:p[5],ant:p[6]});
@@ -772,20 +777,38 @@ async function loadAll(){
     ALL=demoStudents(); document.getElementById('statPill').textContent=`예시 학생 ${ALL.length}명`;
     document.getElementById('cloudInfo').innerHTML='<b>미리보기 모드(예시 데이터)</b> — API_URL을 넣으면 실제 학생 데이터가 여기에 모여요. 단어를 누르면 누가 넣었는지 보여요.';
     ALL.sort((a,b)=>a.num.localeCompare(b.num));
-    const sel=document.getElementById('classSel'); const classes=[...new Set(ALL.map(s=>s.num.slice(0,2)))].sort();
-    sel.innerHTML='<option value="">전체</option>'+classes.map(c=>`<option value="${c}">${c[0]}학년 ${parseInt(c[1],10)}반</option>`).join('');
-    renderRoster(); drawCloud(); return;
+    fillScopeSelects(); renderRoster(); drawCloud(); return;
   }
   try{ const r=await jsonp({action:'all',pin:TEACHER_PIN_INPUT},20000); if(!r||!r.ok) throw new Error((r&&r.error)||'bad');
     ALL=(r.students||[]).map(s=>({num:s.num,name:s.name,updated:s.updated,words:((s.data&&s.data.words)||[]).map(norm)})); }
   catch(e){ ALL=[]; document.getElementById('cloudInfo').innerHTML='<b>'+esc(errText(e,'서버에서 불러오지 못했어요.'))+'</b> 새로고침을 눌러 다시 시도하세요.'; }
   ALL.sort((a,b)=>a.num.localeCompare(b.num));
-  const sel=document.getElementById('classSel'); const classes=[...new Set(ALL.map(s=>s.num.slice(0,2)))].sort();
-  const cur=sel.value; sel.innerHTML='<option value="">전체</option>'+classes.map(c=>`<option value="${c}">${c[0]}학년 ${parseInt(c[1],10)}반</option>`).join(''); if(classes.includes(cur)) sel.value=cur;
   document.getElementById('statPill').textContent=`학생 ${ALL.length}명`;
-  renderRoster(); drawCloud();
+  fillScopeSelects(); renderRoster(); drawCloud();
 }
-const filtered=()=>{ const c=document.getElementById('classSel').value; return c?ALL.filter(s=>s.num.startsWith(c)):ALL; };
+/* ---------- 학년·반 선택 ---------- */
+const gradeSel=document.getElementById('gradeSel'), classSel=document.getElementById('classSel');
+function fillScopeSelects(){
+  const g=gradeSel.value;
+  const grades=[...new Set(ALL.map(s=>parseNum(s.num).grade))].sort();
+  gradeSel.innerHTML='<option value="">전체</option>'+grades.map(x=>`<option value="${x}">${parseInt(x,10)}학년</option>`).join('');
+  if(grades.includes(g)) gradeSel.value=g;
+  fillClassSelect();
+}
+function fillClassSelect(){
+  const g=gradeSel.value, c=classSel.value;
+  const pool=g?ALL.filter(s=>parseNum(s.num).grade===g):ALL;
+  const classes=[...new Set(pool.map(s=>parseNum(s.num).cls))].sort();
+  classSel.innerHTML='<option value="">전체</option>'+classes.map(x=>`<option value="${x}">${parseInt(x,10)}반</option>`).join('');
+  if(classes.includes(c)) classSel.value=c;
+  updateScopePill();
+}
+const scopeLabel=()=>{ const g=gradeSel.value, c=classSel.value;
+  return [g&&`${parseInt(g,10)}학년`, c&&`${parseInt(c,10)}반`].filter(Boolean).join(' ')||'전체'; };
+const scopeTag=()=>{ const g=gradeSel.value, c=classSel.value; return (g||'x')+(c||'x'); };
+function updateScopePill(){ document.getElementById('scopePill').textContent=scopeLabel()+` · ${filtered().length}명`; }
+const filtered=()=>{ const g=gradeSel.value, c=classSel.value;
+  return ALL.filter(s=>{ const p=parseNum(s.num); return (!g||p.grade===g)&&(!c||p.cls===c); }); };
 const stats=s=>({n:s.words.length,core:s.words.filter(w=>w.mean).length,root:new Set(s.words.filter(w=>w.root).map(w=>w.root)).size,syn:s.words.reduce((a,w)=>a+w.syn.length,0),ant:s.words.reduce((a,w)=>a+w.ant.length,0)});
 
 function renderRoster(){
@@ -799,11 +822,13 @@ document.querySelectorAll('.roster th').forEach(th=>th.onclick=()=>{ const k=th.
 function showStudent(num){
   const s=ALL.find(x=>x.num===num); if(!s) return; curStudent=num; renderRoster();
   const st=stats(s);
-  document.getElementById('pinfo').innerHTML=`<b>${esc(s.num)} ${esc(s.name)}</b><span class="pill">단어 ${st.n}</span><span class="pill" style="background:var(--root-soft);color:var(--root)">어근 ${st.root}</span><span class="pill" style="background:var(--syn-soft);color:var(--syn)">유의어 ${st.syn}</span><span class="pill" style="background:var(--ant-soft);color:var(--ant)">반의어 ${st.ant}</span><span class="tsmall">수정 ${esc(s.updated||'')}</span>`;
+  const pn=parseNum(s.num);
+  document.getElementById('pinfo').innerHTML=`<b>${esc(s.num)} ${esc(s.name)}</b><span class="tsmall">${parseInt(pn.grade,10)}학년 ${parseInt(pn.cls,10)}반 ${parseInt(pn.no,10)}번</span><span class="pill">단어 ${st.n}</span><span class="pill" style="background:var(--root-soft);color:var(--root)">어근 ${st.root}</span><span class="pill" style="background:var(--syn-soft);color:var(--syn)">유의어 ${st.syn}</span><span class="pill" style="background:var(--ant-soft);color:var(--ant)">반의어 ${st.ant}</span><span class="tsmall">수정 ${esc(s.updated||'')}</span>`;
   TDATA=s.words; PG.focusKey=null; PG.refresh();
   document.getElementById('pwords').innerHTML=s.words.slice().sort((a,b)=>a.word.localeCompare(b.word)).map(w=>`<span class="${w.mean?'core':''}" title="${esc(w.mean)}">${esc(w.word)}${w.mean?' <i style="color:var(--muted);font-style:normal">'+esc(w.mean)+'</i>':''}</span>`).join('')||'<span class="tsmall">단어 없음</span>';
 }
-document.getElementById('classSel').onchange=()=>{ renderRoster(); drawCloud(); };
+gradeSel.onchange=()=>{ fillClassSelect(); curStudent=null; renderRoster(); drawCloud(); };
+classSel.onchange=()=>{ updateScopePill(); curStudent=null; renderRoster(); drawCloud(); };
 document.getElementById('btnReload').onclick=loadAll;
 document.querySelectorAll('.tbar .tab[data-t]').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tbar .tab[data-t]').forEach(x=>x.classList.remove('on')); document.querySelectorAll('.tview').forEach(x=>x.classList.remove('on'));
@@ -813,7 +838,7 @@ document.getElementById('btnCsvOut').onclick=()=>{
   const rows=[['번호','이름','단어수','뜻입력수','서로다른어근수','유의어수','반의어수','수정시각','단어목록']];
   filtered().forEach(s=>{ const st=stats(s); rows.push([s.num,s.name,st.n,st.core,st.root,st.syn,st.ant,s.updated||'',s.words.map(w=>w.word).join(' ')]); });
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  downloadText(`wordmap_class_${document.getElementById('classSel').value||'all'}.csv`,'\uFEFF'+csv,'text/csv;charset=utf-8');
+  downloadText(`wordmap_${scopeTag()}.csv`,'\uFEFF'+csv,'text/csv;charset=utf-8');
 };
 
 /* ---------- 워드클라우드 (외부 라이브러리 없이 canvas 나선 배치) ---------- */
@@ -830,7 +855,7 @@ function drawCloud(){
   if(!W||!H) return; cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+'px'; cv.style.height=H+'px';
   const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H); cloudRects=[];
   const words=aggregate(); const students=filtered().length;
-  document.getElementById('cloudStat').textContent=`학생 ${students}명 · 단어 ${words.length}종`;
+  document.getElementById('cloudStat').textContent=`${scopeLabel()} · 학생 ${students}명 · 단어 ${words.length}종`;
   if(!words.length){ ctx.fillStyle='#6b7280'; ctx.font='14px sans-serif'; ctx.textAlign='center'; ctx.fillText('표시할 단어가 없어요.',W/2,H/2); return; }
   const max=words[0].n, min=words[words.length-1].n;
   const size=n=>{ const t=max===min?1:(n-min)/(max-min); return Math.round(13+Math.pow(t,.7)*(Math.min(W,H)/9)); };
