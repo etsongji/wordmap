@@ -311,7 +311,8 @@
           <label><input type="checkbox" id="ckMin"> 2명 이상만</label>
           <span class="tsmall" id="cloudStat"></span>
         </div>
-        <button class="csvbtn fsbtn" id="btnCloudFs" title="전체화면 (Esc로 종료)">⛶ 전체화면</button>
+        <button class="csvbtn fsbtn" id="btnCloudReload" title="학생 데이터 다시 불러오기">↻ 새로고침</button>
+        <button class="csvbtn" style="flex:none;padding:8px 12px" id="btnCloudFs" title="전체화면 (Esc로 종료)">⛶ 전체화면</button>
       </div>
       <div class="cloud-wrap"><canvas id="cloud"></canvas><div class="cloud-info" id="cloudInfo">단어를 누르면 누가 넣었는지 보여요. 글자 크기 = 넣은 학생 수.</div></div>
     </div>
@@ -344,7 +345,7 @@
    설정
 ========================================================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxNWILgnzh1VH65yD69UUtwJvllLIHP-O0nPWbB6c7nyw_1yqN--G07Yc89KsTFrXBd/exec';            // ← Apps Script 웹앱 URL (비우면 기기 저장만)
-const APP_VERSION = '2026-09-20.6'; // 배포 확인용 (로그인 창 하단에 표시)
+const APP_VERSION = '2026-09-21.1'; // 배포 확인용 (로그인 창 하단에 표시)
 const SESSION_HOURS = 6;            // 로그인 유지 시간. '나가기'를 누르면 즉시 해제
 const TEACHER_CODE = 'teacher'; // 학번 칸에 이 값을 넣고, 이름 칸에 교사 비밀번호(Code.gs의 TEACHER_PIN)를 넣으면 교사 모드
 const STORE_PREFIX = 'wordmap2_';
@@ -859,6 +860,12 @@ function showStudent(num){
 gradeSel.onchange=()=>{ fillClassSelect(); curStudent=null; renderRoster(); drawCloud(); };
 classSel.onchange=()=>{ updateScopePill(); curStudent=null; renderRoster(); drawCloud(); };
 document.getElementById('btnReload').onclick=loadAll;
+const btnCloudReload=document.getElementById('btnCloudReload');
+btnCloudReload.onclick=async()=>{
+  if(btnCloudReload.disabled) return;
+  btnCloudReload.disabled=true; btnCloudReload.textContent='불러오는 중…';
+  try{ await loadAll(); } finally{ btnCloudReload.disabled=false; btnCloudReload.textContent='↻ 새로고침'; }
+};
 document.querySelectorAll('.tbar .tab[data-t]').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tbar .tab[data-t]').forEach(x=>x.classList.remove('on')); document.querySelectorAll('.tview').forEach(x=>x.classList.remove('on'));
   t.classList.add('on'); document.getElementById('t-'+t.dataset.t).classList.add('on');
